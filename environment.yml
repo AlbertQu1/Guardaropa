@@ -1,0 +1,19 @@
+name: guardarropa
+channels:
+  - defaults
+dependencies:
+  - python=3.13
+  - numpy
+  - pip
+  - pip:
+      - psycopg2-binary
+      - pgvector
+      - python-dotenv
+      - fastapi
+      - uvicorn[standard]
+      - python-multipart
+      - google-genai
+      - pillow
+      - pillow-heif
+      - rembg[cpu]
+      - requests
