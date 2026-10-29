@@ -16,6 +16,7 @@ class EtiquetasPrenda:
     temporada: list[str] = field(default_factory=list)
     ocasiones: list[str] = field(default_factory=list)
     descripcion: str = ""
+    marca: str | None = None  # solo si se ve el logo
 
 
 @dataclass
@@ -36,6 +37,8 @@ class CuidadoPrenda:
     planchado: str | None = None  # no | baja | media | alta
     tintoreria: str | None = None  # no | si | solo
     notas: str = ""
+    marca: str | None = None  # la etiqueta interior suele traerlas
+    talla: str | None = None
 
 
 @dataclass

@@ -7,6 +7,7 @@ Uso:
 
 import asyncio
 import os
+import re
 import threading
 import time
 from typing import Literal
@@ -85,7 +86,7 @@ def descartar_temporal(d: DescartarIn):
 
 COLUMNAS = ["id", "foto_original", "foto_recortada", "categoria", "subcategoria", "colores", "estampado",
             "material", "formalidad", "temporada", "ocasiones", "descripcion", "foto_etiqueta", "composicion",
-            "cuidado", "ultimo_uso", "veces_usada"]
+            "cuidado", "talla", "marca", "ajuste", "ultimo_uso", "veces_usada"]
 
 
 class PrendaIn(BaseModel):
@@ -100,10 +101,35 @@ class PrendaIn(BaseModel):
     temporada: list[str] = []
     ocasiones: list[str] = []
     descripcion: str = ""
+    talla: str | None = None
+    marca: str | None = None
+    ajuste: str | None = None
+
+    def normalizar(self):
+        """Talla en mayusculas ('m' -> 'M', '32 x 30' -> '32X30'); vacios -> None."""
+        self.talla = normalizar_talla(self.talla)
+        self.marca = " ".join((self.marca or "").split()) or None
+        self.ajuste = self.ajuste or None
+        if self.ajuste and self.ajuste not in params.AJUSTES:
+            raise HTTPException(400, f"Ajuste invalido: {self.ajuste}")
+
+
+def normalizar_talla(t: str | None) -> str | None:
+    """'m' -> 'M'; '32 x 30' / '32X30' -> '32/30' (cintura/largo); '15½ 32/33' -> '15.5/32-33' (cuello/manga)."""
+    t = (t or "").strip().upper().replace("½", ".5").replace(",", ".")
+    if not t:
+        return None
+    t = re.sub(r"(\d)\s*[X×]\s*(\d)", r"\1/\2", t)
+    # cuello y manga: '15.5 32/33' -> dos medidas, la manga como rango
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*[/ ]\s*(\d+)\s*[/-]\s*(\d+)", t)
+    if m:
+        return f"{m[1]}/{m[2]}-{m[3]}"
+    return re.sub(r"\s*/\s*", "/", re.sub(r"\s+", " ", t))
 
 
 def _texto_embedding(p: PrendaIn) -> str:
-    partes = [p.subcategoria or p.categoria, " ".join(p.colores), p.estampado or "", p.material or "", p.descripcion]
+    partes = [p.subcategoria or p.categoria, " ".join(p.colores), p.estampado or "", p.material or "",
+              p.marca or "", p.descripcion]
     return ". ".join(x for x in partes if x)
 
 
@@ -154,6 +180,7 @@ def crear_prenda(p: PrendaIn):
         raise HTTPException(400, f"Categoria invalida: {p.categoria}")
     _validar_ruta(p.foto_original)
     _validar_ruta(p.foto_recortada)
+    p.normalizar()
     vector = np.array(embed([_texto_embedding(p)])[0])
     # Confirmada: sus fotos salen de temporal/
     p.foto_original = fotos.confirmar(p.foto_original, "originales")
@@ -161,10 +188,10 @@ def crear_prenda(p: PrendaIn):
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             f"""INSERT INTO {S}.prendas (foto_original, foto_recortada, categoria, subcategoria, colores, estampado,
-                    material, formalidad, temporada, ocasiones, descripcion, embedding)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector) RETURNING id""",
+                    material, formalidad, temporada, ocasiones, descripcion, talla, marca, ajuste, embedding)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector) RETURNING id""",
             (p.foto_original, p.foto_recortada, p.categoria, p.subcategoria, p.colores, p.estampado, p.material,
-             p.formalidad, p.temporada, p.ocasiones, p.descripcion, vector),
+             p.formalidad, p.temporada, p.ocasiones, p.descripcion, p.talla, p.marca, p.ajuste, vector),
         )
         return {"id": cur.fetchone()[0]}
 
@@ -186,14 +213,16 @@ def listar_prendas(categoria: str | None = None):
 def editar_prenda(prenda_id: int, p: PrendaIn):
     if p.categoria not in params.CATEGORIAS:
         raise HTTPException(400, f"Categoria invalida: {p.categoria}")
+    p.normalizar()
     vector = np.array(embed([_texto_embedding(p)])[0])
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             f"""UPDATE {S}.prendas SET categoria=%s, subcategoria=%s, colores=%s, estampado=%s, material=%s,
-                    formalidad=%s, temporada=%s, ocasiones=%s, descripcion=%s, embedding=%s::vector
+                    formalidad=%s, temporada=%s, ocasiones=%s, descripcion=%s, talla=%s, marca=%s, ajuste=%s,
+                    embedding=%s::vector
                 WHERE id=%s AND activa""",
             (p.categoria, p.subcategoria, p.colores, p.estampado, p.material, p.formalidad, p.temporada,
-             p.ocasiones, p.descripcion, vector, prenda_id),
+             p.ocasiones, p.descripcion, p.talla, p.marca, p.ajuste, vector, prenda_id),
         )
         if cur.rowcount == 0:
             raise HTTPException(404, "Prenda no encontrada")
@@ -297,6 +326,9 @@ class CuidadoIn(BaseModel):
     tintoreria: str | None = None
     notas: str = ""
     origen: Literal["etiqueta", "tela", "manual"] | None = None  # de donde salieron los simbolos
+    # La etiqueta interior suele traer marca y talla: si vienen, se guardan en la prenda
+    marca: str | None = None
+    talla: str | None = None
 
 
 @app.post("/prendas/{prenda_id}/etiqueta/analizar")
@@ -323,7 +355,9 @@ def guardar_cuidado(prenda_id: int, c: CuidadoIn):
     _validar_ruta(c.foto_etiqueta)
     _prenda_o_404(prenda_id)
     c.foto_etiqueta = fotos.confirmar(c.foto_etiqueta, "etiquetas")
-    datos = c.model_dump(exclude={"foto_etiqueta", "composicion"})
+    datos = c.model_dump(exclude={"foto_etiqueta", "composicion", "marca", "talla"})
+    marca = " ".join((c.marca or "").split()) or None
+    talla = normalizar_talla(c.talla)
     if c.simbolos:
         # Los simbolos mandan: las instrucciones se recalculan desde el diccionario
         t = simbolos_cuidado.traducir(c.simbolos)
@@ -333,9 +367,10 @@ def guardar_cuidado(prenda_id: int, c: CuidadoIn):
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             f"""UPDATE {S}.prendas SET composicion = %s, cuidado = %s,
-                    foto_etiqueta = COALESCE(%s, foto_etiqueta)
+                    foto_etiqueta = COALESCE(%s, foto_etiqueta),
+                    marca = COALESCE(%s, marca), talla = COALESCE(%s, talla)
                 WHERE id = %s AND activa""",
-            (Json([f.model_dump() for f in c.composicion]), Json(datos), c.foto_etiqueta, prenda_id),
+            (Json([f.model_dump() for f in c.composicion]), Json(datos), c.foto_etiqueta, marca, talla, prenda_id),
         )
         if cur.rowcount == 0:
             raise HTTPException(404, "Prenda no encontrada")
@@ -421,6 +456,47 @@ def armar_outfit(base: int, fijas: list[int] = Query(default=[]), extras: list[s
         raise HTTPException(404, "Prenda base no encontrada")
     fijadas = [por_id[i] for i in fijas if i in por_id and i != base]
     return combinador.armar(por_id[base], fijadas, closet, extras=extras)
+
+
+# ---------- Tallas y marcas ----------
+
+@app.get("/tallas")
+def tallas_y_marcas():
+    """Que tallas y marcas tiene el closet, por categoria. Sirve para comprar y para autocompletar."""
+    prendas = _prendas()
+    por_cat: dict[str, dict] = {}
+    marcas: dict[str, dict] = {}
+    for p in prendas:
+        c = por_cat.setdefault(p["categoria"], {"categoria": p["categoria"], "prendas": 0, "tallas": {}, "marcas": {}, "ajustes": {}})
+        c["prendas"] += 1
+        if p["talla"]:
+            c["tallas"][p["talla"]] = c["tallas"].get(p["talla"], 0) + 1
+        if p["ajuste"]:
+            c["ajustes"][p["ajuste"]] = c["ajustes"].get(p["ajuste"], 0) + 1
+        if p["marca"]:
+            # 'zara' y 'ZARA' son la misma marca: se muestra como se escribio mas veces
+            m = marcas.setdefault(p["marca"].lower(), {"grafias": {}, "prendas": 0, "categorias": set()})
+            m["grafias"][p["marca"]] = m["grafias"].get(p["marca"], 0) + 1
+            m["prendas"] += 1
+            m["categorias"].add(p["categoria"])
+    nombre = {k: max(m["grafias"], key=m["grafias"].get) for k, m in marcas.items()}
+    for p in prendas:
+        if p["marca"]:
+            c = por_cat[p["categoria"]]
+            n = nombre[p["marca"].lower()]
+            c["marcas"][n] = c["marcas"].get(n, 0) + 1
+    orden = lambda d: [{"valor": k, "prendas": v} for k, v in sorted(d.items(), key=lambda x: (-x[1], x[0]))]
+    categorias = [
+        {**c, "tallas": orden(c["tallas"]), "marcas": orden(c["marcas"]), "ajustes": orden(c["ajustes"]),
+         "sin_talla": c["prendas"] - sum(c["tallas"].values())}
+        for c in sorted(por_cat.values(), key=lambda c: params.CATEGORIAS.index(c["categoria"]))
+    ]
+    lista_marcas = sorted(
+        ({"marca": nombre[k], "prendas": m["prendas"], "categorias": sorted(m["categorias"])} for k, m in marcas.items()),
+        key=lambda m: (-m["prendas"], m["marca"].lower()),
+    )
+    return {"total": len(prendas), "con_talla": sum(1 for p in prendas if p["talla"]),
+            "categorias": categorias, "marcas": lista_marcas, "ajustes": params.AJUSTES}
 
 
 # ---------- Olvidadas ----------

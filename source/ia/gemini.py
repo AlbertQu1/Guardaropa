@@ -19,6 +19,7 @@ PROMPT_ETIQUETAR = f"""Eres un estilista. Analiza la prenda principal de la foto
 - formalidad: 1 (muy casual) a 5 (muy formal).
 - temporada: de ["calor", "templado", "frio"], las que apliquen.
 - ocasiones: de ["casa", "casual", "oficina", "salir", "formal", "deporte"], las que apliquen.
+- marca: solo si se ve claramente un logo o una etiqueta con la marca; si no, cadena vacía. No adivines.
 - descripcion: 1-2 frases que describan la prenda (color, corte, estilo) para poder buscarla luego por similitud."""
 
 
@@ -33,7 +34,10 @@ PROMPT_CUIDADO = f"""Lee la etiqueta de cuidado de esta prenda.
 2. composicion: cada fibra con su porcentaje, en minúsculas y en español (algodón, poliéster, elastano, lana,
    viscosa, lino, nailon, seda...). Si hay varias partes (forro, exterior), usa la tela exterior.
 3. notas: advertencias escritas en la etiqueta ("lavar con colores similares", "lavar al revés"), en español.
-   Vacío si no hay."""
+   Vacío si no hay.
+4. marca y talla: si aparecen en la foto, tal cual (ej. "ZARA", "M", "MX 27"). Vacío si no se ven;
+   no adivines la talla por el tamaño de la prenda. Camisa con talla de cuello y manga: "cuello/manga"
+   (ej. "15.5/32-33" o "39/84"). Pantalón con cintura y largo: "cintura/largo" (ej. "32/30")."""
 
 
 class _FibraSchema(BaseModel):
@@ -45,6 +49,8 @@ class _CuidadoSchema(BaseModel):
     simbolos: list[str]
     composicion: list[_FibraSchema]
     notas: str = ""
+    marca: str = ""
+    talla: str = ""
 
 
 class _EtiquetasSchema(BaseModel):
@@ -57,6 +63,7 @@ class _EtiquetasSchema(BaseModel):
     temporada: list[str]
     ocasiones: list[str]
     descripcion: str
+    marca: str = ""
 
 
 class GeminiProvider(IAProvider):
@@ -76,7 +83,7 @@ class GeminiProvider(IAProvider):
         )
         datos: _EtiquetasSchema = resp.parsed
         cat = datos.categoria if datos.categoria in params.CATEGORIAS else "top"
-        return EtiquetasPrenda(**{**datos.model_dump(), "categoria": cat})
+        return EtiquetasPrenda(**{**datos.model_dump(), "categoria": cat, "marca": datos.marca.strip() or None})
 
     def leer_etiqueta_cuidado(self, foto: bytes, mime: str) -> CuidadoPrenda:
         resp = self.cliente.models.generate_content(
@@ -102,6 +109,8 @@ class GeminiProvider(IAProvider):
             planchado=t.get("planchado"),
             tintoreria=t.get("tintoreria"),
             notas=notas,
+            marca=datos.marca.strip() or None,
+            talla=datos.talla.strip() or None,
         )
 
     # Fase 2 (outfits con IA) y Fase 3 (try-on).

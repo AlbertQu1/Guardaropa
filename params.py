@@ -15,6 +15,7 @@ HORAS_ENTRE_LIMPIEZAS = 6
 GEMINI_MODELO_TEXTO = "gemini-flash-latest"
 
 CATEGORIAS = ["top", "bottom", "calzado", "chamarra", "accesorio", "bolsa", "vestido_completo"]
+AJUSTES = ["ajustado", "regular", "holgado", "oversize"]  # como le queda la prenda
 # Motivos para sacar una prenda del closet (baja logica, se conserva el historial)
 MOTIVOS_BAJA = {
     "regalada": "Regalada", "donada": "Donada", "vendida": "Vendida", "rota": "Rota o desgastada",

@@ -35,6 +35,9 @@ qué se procesa local y qué se manda a la nube.
 - ✅ **Olvidadas**: prendas sin usar en 60+ días y prendas que aún no estrenas.
 - ✅ **Bolsas y mochilas**: categoría propia que el combinador no sugiere sola; solo aparece si la
   pides (`extras=bolsa`) o si fijas una.
+- ✅ **Tallas y marcas**: cada prenda guarda talla, marca y cómo queda (ajustado, regular, holgado,
+  oversize). Camisas por cuello y manga (`15.5/32-33`) y pantalones por cintura y largo (`32/30`).
+  La IA las lee de la etiqueta interior. `GET /tallas` resume qué tallas y marcas tienes por categoría.
 - ✅ **Salidas**: sacar una prenda del clóset con motivo (regalada, donada, vendida, rota, ya no
   queda…), nota y fecha. Se conserva su historial de uso y se puede regresar al clóset.
 - ⏳ **Fase 2b**: "pídeme un outfit" en lenguaje natural ("algo para la oficina, hace frío") y
@@ -107,7 +110,7 @@ media/                  fotos (no versionado)
 
 | Tabla | Para qué |
 |---|---|
-| `prendas` | cada prenda: fotos, categoría, colores, formalidad (1-5), clima, ocasiones, descripción, embedding (HNSW coseno), foto de la etiqueta, composición y cuidado (JSONB), y motivo/nota/fecha de salida del clóset |
+| `prendas` | cada prenda: fotos, categoría, colores, formalidad (1-5), clima, ocasiones, descripción, embedding (HNSW coseno), foto de la etiqueta, composición y cuidado (JSONB), talla, marca, ajuste, y motivo/nota/fecha de salida del clóset |
 | `outfits` | outfits guardados o propuestos, si se aceptaron y su imagen de try-on |
 | `usos` | "me lo puse hoy", base de la rotación |
 | `fotos_usuario` | fotos de cuerpo completo para el try-on |
@@ -135,6 +138,7 @@ media/                  fotos (no versionado)
 | GET | `/outfit/armar?base=&fijas=&extras=` | opciones ordenadas por espacio para completar el outfit (`extras=bolsa` para pedir bolsa o mochila) |
 | POST | `/usos` · DELETE `/usos` | "me lo puse hoy" (idempotente por día) y deshacer |
 | POST · GET | `/outfits` | guardar y listar outfits |
+| GET | `/tallas` | tallas, marcas y ajustes por categoría (marcas agrupadas sin importar mayúsculas) |
 | GET | `/prendas/olvidadas` | sin usar en N días + nunca usadas |
 | POST | `/lavanderia` | agrupa prendas en cargas de lavado |
 

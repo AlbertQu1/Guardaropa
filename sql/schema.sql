@@ -65,6 +65,11 @@ ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS baja_motivo TEXT;
 ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS baja_nota TEXT;
 ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS baja_fecha DATE;
 
+-- Talla, marca y como queda (ajustado / regular / holgado / oversize)
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS talla TEXT;
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS marca TEXT;
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS ajuste TEXT;
+
 -- Ultimo uso por prenda: base de la rotacion y de "Olvidadas".
 -- Se recrea siempre porque p.* se congela al crear la vista.
 DROP VIEW IF EXISTS guardarropa.v_prendas_uso;
