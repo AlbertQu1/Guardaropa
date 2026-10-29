@@ -36,7 +36,7 @@ qué se procesa local y qué se manda a la nube.
 - ✅ **Bolsas y mochilas**: categoría propia que el combinador no sugiere sola; solo aparece si la
   pides (`extras=bolsa`) o si fijas una.
 - ✅ **Tallas y marcas**: cada prenda guarda talla, marca y cómo queda (ajustado, regular, holgado,
-  oversize). Camisas por cuello y manga (`15.5/32-33`) y pantalones por cintura y largo (`32/30`).
+  oversize). Camisas de vestir por cuello y manga (`15.5/32-33`), sacos por pecho y manga, y pantalones por cintura y largo (`32/30`).
   La IA las lee de la etiqueta interior. `GET /tallas` resume qué tallas y marcas tienes por categoría.
 - ✅ **Salidas**: sacar una prenda del clóset con motivo (regalada, donada, vendida, rota, ya no
   queda…), nota y fecha. Se conserva su historial de uso y se puede regresar al clóset.

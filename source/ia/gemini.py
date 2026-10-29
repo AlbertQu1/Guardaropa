@@ -36,8 +36,8 @@ PROMPT_CUIDADO = f"""Lee la etiqueta de cuidado de esta prenda.
 3. notas: advertencias escritas en la etiqueta ("lavar con colores similares", "lavar al revés"), en español.
    Vacío si no hay.
 4. marca y talla: si aparecen en la foto, tal cual (ej. "ZARA", "M", "MX 27"). Vacío si no se ven;
-   no adivines la talla por el tamaño de la prenda. Camisa con talla de cuello y manga: "cuello/manga"
-   (ej. "15.5/32-33" o "39/84"). Pantalón con cintura y largo: "cintura/largo" (ej. "32/30")."""
+   no adivines la talla por el tamaño de la prenda. Camisa de vestir con talla de cuello y manga: "cuello/manga"
+   (ej. "15.5/32-33" o "39/84"); playeras, polos y camisas casuales suelen traer talla normal (S, M, L). Pantalón con cintura y largo: "cintura/largo" (ej. "32/30")."""
 
 
 class _FibraSchema(BaseModel):
