@@ -20,9 +20,14 @@ qué se procesa local y qué se manda a la nube.
   símbolos de lavado. La IA solo identifica qué símbolos aparecen, usando un diccionario
   cerrado de 35 símbolos ISO 3758 (`source/simbolos_cuidado.py`); la traducción a
   instrucciones es determinista. Si corriges un símbolo a mano, las instrucciones se recalculan.
+  Si la prenda no tiene etiqueta o la IA no la lee, eliges la tela y se usa el cuidado típico de
+  esa tela (en mezclas gana el más delicado), marcado como estimado.
+- ✅ **Guía de cuidado**: cómo leer cada grupo de símbolos, cuidado típico de 15 telas y de cosas
+  de la casa (sábanas, toallas, cortinas, edredón…) en `source/guia_cuidado.py`.
 - ✅ **Lavandería**: eliges lo que vas a lavar y lo separa en cargas compatibles (blancos y
   claros / oscuros / colores, ciclo delicado por fibra, a mano, tintorería), con la temperatura
-  máxima de cada carga y avisos por prenda (sin blanqueador, no a la secadora…). Sin IA.
+  máxima de cada carga y avisos por prenda (sin blanqueador, no a la secadora…). Las prendas sin
+  etiqueta pero con tela registrada usan el cuidado típico de su tela. Sin IA.
 - ✅ **Fase 2a — Arma tu outfit**: eliges una prenda base y el combinador (`source/combinador.py`,
   sin IA) ordena opciones para cada espacio por formalidad, color (neutros combinan con todo,
   máximo un color fuerte), ocasión común, clima, estampados y rotación (lo que no usas sube, pero
@@ -80,6 +85,7 @@ source/fotos.py         normalización y recorte de fondo
 source/combinador.py    "Arma tu outfit" (reglas, sin IA)
 source/lavanderia.py    agrupación en cargas de lavado (reglas, sin IA)
 source/simbolos_cuidado.py  diccionario ISO 3758 de símbolos de cuidado
+source/guia_cuidado.py  guía por tela y por artículo de la casa + estimación sin etiqueta
 source/db.py            conexión Postgres + pgvector
 source/embeddings_client.py
 source/ia/              capa de IA intercambiable (base.py, gemini.py)
@@ -109,6 +115,8 @@ media/                  fotos (no versionado)
 | POST | `/prendas/{id}/etiqueta/analizar` | foto de la etiqueta → composición + símbolos propuestos (no guarda) |
 | PUT | `/prendas/{id}/cuidado` | guarda composición y símbolos (las instrucciones se derivan de los símbolos) |
 | GET | `/cuidado/simbolos` | diccionario de símbolos ISO 3758 |
+| GET | `/cuidado/guia` | cómo leer los símbolos, cuidado por tela y por artículo de la casa |
+| POST | `/cuidado/estimar` | símbolos sugeridos para una prenda sin etiqueta, según sus fibras |
 | GET | `/outfit/armar?base=&fijas=` | opciones ordenadas por espacio para completar el outfit |
 | POST | `/usos` · DELETE `/usos` | "me lo puse hoy" (idempotente por día) y deshacer |
 | POST · GET | `/outfits` | guardar y listar outfits |

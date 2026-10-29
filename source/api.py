@@ -8,6 +8,7 @@ Uso:
 import asyncio
 import os
 import threading
+from typing import Literal
 
 import numpy as np
 from dataclasses import asdict
@@ -22,7 +23,7 @@ from psycopg2.extras import Json, RealDictCursor
 from pydantic import BaseModel, Field
 
 import params
-from source import combinador, fotos, lavanderia, simbolos_cuidado
+from source import combinador, fotos, guia_cuidado, lavanderia, simbolos_cuidado
 from source.db import conexion
 from source.embeddings_client import embed
 from source.ia import get_provider
@@ -198,6 +199,7 @@ class CuidadoIn(BaseModel):
     planchado: str | None = None
     tintoreria: str | None = None
     notas: str = ""
+    origen: Literal["etiqueta", "tela", "manual"] | None = None  # de donde salieron los simbolos
 
 
 @app.post("/prendas/{prenda_id}/etiqueta/analizar")
@@ -348,3 +350,22 @@ def armar_cargas(l: LavanderiaIn):
 def diccionario_simbolos():
     """Diccionario oficial de simbolos (ISO 3758) para mostrarlos en la app."""
     return simbolos_cuidado.describir(simbolos_cuidado.CODIGOS)
+
+
+@app.get("/cuidado/guia")
+def guia_cuidado_completa():
+    """Como leer cada grupo de simbolos, cuidado tipico por tela y por articulo de la casa."""
+    return guia_cuidado.guia()
+
+
+class EstimarIn(BaseModel):
+    fibras: list[str] = Field(min_length=1)
+
+
+@app.post("/cuidado/estimar")
+def estimar_cuidado(e: EstimarIn):
+    """Para prendas sin etiqueta o ilegible: simbolos sugeridos segun la tela."""
+    r = guia_cuidado.estimar(e.fibras)
+    if not r:
+        raise HTTPException(422, "No reconozco esa tela")
+    return r

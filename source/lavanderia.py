@@ -1,5 +1,7 @@
 """Agrupa prendas en cargas de lavado compatibles a partir de su etiqueta de cuidado. Sin IA."""
 
+from source import guia_cuidado, simbolos_cuidado
+
 CLAROS = {"blanco", "crema", "hueso", "marfil", "beige", "arena", "gris claro", "azul claro", "rosa", "celeste", "amarillo"}
 OSCUROS = {"negro", "azul marino", "marino", "gris oscuro", "mezclilla", "denim", "café", "cafe", "marrón",
            "vino", "guinda", "verde olivo", "olivo", "verde militar", "morado"}
@@ -61,11 +63,20 @@ def agrupar(prendas: list[dict]) -> list[dict]:
 
     for p in prendas:
         cuidado = p.get("cuidado") or {}
+        estimado = False
+        if not cuidado.get("simbolos") and not cuidado.get("lavado"):
+            # Sin etiqueta pero con tela conocida: usar el cuidado tipico de esa tela
+            fibras = [f.get("fibra") or "" for f in (p.get("composicion") or [])]
+            e = guia_cuidado.estimar(fibras) if fibras else None
+            if e:
+                cuidado = {**simbolos_cuidado.traducir(e["simbolos"]), "notas": cuidado.get("notas") or ""}
+                estimado = True
+        avisos = _avisos(cuidado) + (["cuidado estimado por la tela"] if estimado else [])
         item = {"id": p["id"], "subcategoria": p.get("subcategoria"), "categoria": p["categoria"],
-                "foto": p.get("foto_recortada") or p.get("foto_original"), "avisos": _avisos(cuidado)}
-        if not cuidado:
+                "foto": p.get("foto_recortada") or p.get("foto_original"), "avisos": avisos}
+        if not cuidado.get("simbolos") and not cuidado.get("lavado"):
             agregar(("sin_info",), "Sin etiqueta registrada", "sin_info", item,
-                    consejo="Escanea su etiqueta. Mientras, lávalas en frío y en ciclo delicado.")
+                    consejo="Escanea su etiqueta o elige su tela en Cuidado. Mientras, lávalas en frío y en ciclo delicado.")
         elif cuidado.get("lavado") == "no_lavar" or cuidado.get("tintoreria") == "solo":
             agregar(("tintoreria",), "Tintorería", "tintoreria", item, consejo="No van a la lavadora.")
         elif cuidado.get("lavado") == "mano":
