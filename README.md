@@ -16,9 +16,20 @@ qué se procesa local y qué se manda a la nube.
   systemd y HTTPS vía Tailscale.
 - ✅ **Fase 1 — clóset digital**: agregar prendas desde el celular (foto → recorte de fondo →
   etiquetado con IA → confirmación manual), galería por categoría, edición y baja.
-- ⏳ **Fase 2 — estilista**: "arma tu outfit" (eliges una prenda base y la app propone el
-  resto), "pídeme un outfit" en lenguaje natural ("algo para la oficina, hace frío"),
-  registro de uso, rotación de prendas olvidadas y modo tienda.
+- ✅ **Cuidado de prendas**: foto de la etiqueta interior → composición de la tela y
+  símbolos de lavado. La IA solo identifica qué símbolos aparecen, usando un diccionario
+  cerrado de 35 símbolos ISO 3758 (`source/simbolos_cuidado.py`); la traducción a
+  instrucciones es determinista. Si corriges un símbolo a mano, las instrucciones se recalculan.
+- ✅ **Lavandería**: eliges lo que vas a lavar y lo separa en cargas compatibles (blancos y
+  claros / oscuros / colores, ciclo delicado por fibra, a mano, tintorería), con la temperatura
+  máxima de cada carga y avisos por prenda (sin blanqueador, no a la secadora…). Sin IA.
+- ✅ **Fase 2a — Arma tu outfit**: eliges una prenda base y el combinador (`source/combinador.py`,
+  sin IA) ordena opciones para cada espacio por formalidad, color (neutros combinan con todo,
+  máximo un color fuerte), ocasión común, clima, estampados y rotación (lo que no usas sube, pero
+  solo como desempate). Fijar una prenda recalcula el resto. "Me lo puse hoy" registra el uso.
+- ✅ **Olvidadas**: prendas sin usar en 60+ días y prendas que aún no estrenas.
+- ⏳ **Fase 2b**: "pídeme un outfit" en lenguaje natural ("algo para la oficina, hace frío") y
+  modo tienda.
 - ⏳ **Fase 3 — try-on y grafo**: ver el outfit puesto en una foto tuya (generación de imagen)
   y un grafo de combinaciones que aprende de los outfits que aceptas o rechazas.
 
@@ -47,7 +58,7 @@ guarda sin que el usuario confirme las etiquetas: la IA propone, tú decides.
 
 ### IA intercambiable
 Toda llamada a IA pasa por una sola interfaz (`source/ia/base.py`): `etiquetar_prenda`,
-`proponer_outfits` y `generar_tryon`. Hoy la implementa `GeminiProvider`. Cambiar a un modelo
+`leer_etiqueta_cuidado`, `proponer_outfits` y `generar_tryon`. Hoy la implementa `GeminiProvider`. Cambiar a un modelo
 local (por ejemplo Ollama con un modelo de visión y ComfyUI para el try-on, en otra máquina
 con GPU) es agregar otro provider y cambiar `IA_PROVIDER` en `.env`, sin tocar la API ni la app.
 
@@ -66,6 +77,9 @@ params.py               constantes (categorías, modelos, rutas)
 sql/schema.sql          schema guardarropa (idempotente)
 source/api.py           API FastAPI
 source/fotos.py         normalización y recorte de fondo
+source/combinador.py    "Arma tu outfit" (reglas, sin IA)
+source/lavanderia.py    agrupación en cargas de lavado (reglas, sin IA)
+source/simbolos_cuidado.py  diccionario ISO 3758 de símbolos de cuidado
 source/db.py            conexión Postgres + pgvector
 source/embeddings_client.py
 source/ia/              capa de IA intercambiable (base.py, gemini.py)
@@ -76,7 +90,7 @@ media/                  fotos (no versionado)
 
 | Tabla | Para qué |
 |---|---|
-| `prendas` | cada prenda: fotos, categoría, colores, formalidad (1-5), clima, ocasiones, descripción y su embedding (HNSW coseno) |
+| `prendas` | cada prenda: fotos, categoría, colores, formalidad (1-5), clima, ocasiones, descripción, embedding (HNSW coseno), foto de la etiqueta, composición y cuidado (JSONB) |
 | `outfits` | outfits guardados o propuestos, si se aceptaron y su imagen de try-on |
 | `usos` | "me lo puse hoy", base de la rotación |
 | `fotos_usuario` | fotos de cuerpo completo para el try-on |
@@ -92,6 +106,14 @@ media/                  fotos (no versionado)
 | GET | `/prendas?categoria=` | lista el clóset con datos de uso |
 | PUT | `/prendas/{id}` | edita etiquetas (recalcula el embedding) |
 | DELETE | `/prendas/{id}` | baja lógica (conserva el historial de uso) |
+| POST | `/prendas/{id}/etiqueta/analizar` | foto de la etiqueta → composición + símbolos propuestos (no guarda) |
+| PUT | `/prendas/{id}/cuidado` | guarda composición y símbolos (las instrucciones se derivan de los símbolos) |
+| GET | `/cuidado/simbolos` | diccionario de símbolos ISO 3758 |
+| GET | `/outfit/armar?base=&fijas=` | opciones ordenadas por espacio para completar el outfit |
+| POST | `/usos` · DELETE `/usos` | "me lo puse hoy" (idempotente por día) y deshacer |
+| POST · GET | `/outfits` | guardar y listar outfits |
+| GET | `/prendas/olvidadas` | sin usar en N días + nunca usadas |
+| POST | `/lavanderia` | agrupa prendas en cargas de lavado |
 
 ## Setup
 
