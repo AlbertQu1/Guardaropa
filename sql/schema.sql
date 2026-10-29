@@ -50,8 +50,20 @@ CREATE TABLE IF NOT EXISTS guardarropa.fotos_usuario (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Ultimo uso por prenda: base de la rotacion y de "Olvidadas"
-CREATE OR REPLACE VIEW guardarropa.v_prendas_uso AS
+
+-- Cuidado de la prenda (2026-10-28): foto de la etiqueta interior, composicion y lavado
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS foto_etiqueta TEXT;
+-- [{"fibra": "algodon", "porcentaje": 60}, ...]
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS composicion JSONB;
+-- {"lavado": "maquina|mano|no_lavar", "temperatura_max": 30, "blanqueador": "si|no|sin_cloro",
+--  "secadora": "no|baja|media|alta", "secado": "tendido|plano|sombra|...", "planchado": "no|baja|media|alta",
+--  "tintoreria": "no|si|solo", "notas": "..."}
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS cuidado JSONB;
+
+-- Ultimo uso por prenda: base de la rotacion y de "Olvidadas".
+-- Se recrea siempre porque p.* se congela al crear la vista.
+DROP VIEW IF EXISTS guardarropa.v_prendas_uso;
+CREATE VIEW guardarropa.v_prendas_uso AS
 SELECT p.*, u.ultimo_uso, COALESCE(u.veces, 0) AS veces_usada
 FROM guardarropa.prendas p
 LEFT JOIN (

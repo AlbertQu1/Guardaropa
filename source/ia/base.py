@@ -19,6 +19,26 @@ class EtiquetasPrenda:
 
 
 @dataclass
+class Fibra:
+    fibra: str
+    porcentaje: int | None = None
+
+
+@dataclass
+class CuidadoPrenda:
+    composicion: list[Fibra] = field(default_factory=list)
+    simbolos: list[str] = field(default_factory=list)  # codigos de source/simbolos_cuidado.py
+    lavado: str | None = None  # maquina | mano | no_lavar
+    temperatura_max: int | None = None  # grados C
+    blanqueador: str | None = None  # si | no | sin_cloro
+    secadora: str | None = None  # no | sin_calor | baja | alta
+    secado: str | None = None  # tendido | plano | sombra | escurrir | colgado
+    planchado: str | None = None  # no | baja | media | alta
+    tintoreria: str | None = None  # no | si | solo
+    notas: str = ""
+
+
+@dataclass
 class PropuestaOutfit:
     prendas: list[int]  # ids de guardarropa.prendas
     nombre: str
@@ -29,6 +49,10 @@ class IAProvider(ABC):
     @abstractmethod
     def etiquetar_prenda(self, foto: bytes, mime: str) -> EtiquetasPrenda:
         """Analiza la foto de una prenda y devuelve sus etiquetas."""
+
+    @abstractmethod
+    def leer_etiqueta_cuidado(self, foto: bytes, mime: str) -> CuidadoPrenda:
+        """Lee la etiqueta interior: composicion de la tela y simbolos de lavado."""
 
     @abstractmethod
     def proponer_outfits(self, pedido: str, candidatos: list[dict], n: int = 3) -> list[PropuestaOutfit]:

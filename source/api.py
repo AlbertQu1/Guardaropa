@@ -11,17 +11,18 @@ import threading
 
 import numpy as np
 from dataclasses import asdict
+from datetime import date
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
 from pydantic import BaseModel, Field
 
 import params
-from source import fotos
+from source import combinador, fotos, lavanderia, simbolos_cuidado
 from source.db import conexion
 from source.embeddings_client import embed
 from source.ia import get_provider
@@ -32,7 +33,7 @@ S = params.DB_SCHEMA
 app = FastAPI(title="Guardarropa API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-for sub in ("originales", "recortes", "usuario", "tryon"):
+for sub in ("originales", "recortes", "etiquetas", "usuario", "tryon"):
     os.makedirs(os.path.join(params.MEDIA_DIR, sub), exist_ok=True)
 app.mount("/media", StaticFiles(directory=params.MEDIA_DIR), name="media")
 
@@ -43,7 +44,8 @@ def precargar_rembg():
     threading.Thread(target=fotos._rembg, daemon=True).start()
 
 COLUMNAS = ["id", "foto_original", "foto_recortada", "categoria", "subcategoria", "colores", "estampado",
-            "material", "formalidad", "temporada", "ocasiones", "descripcion", "ultimo_uso", "veces_usada"]
+            "material", "formalidad", "temporada", "ocasiones", "descripcion", "foto_etiqueta", "composicion",
+            "cuidado", "ultimo_uso", "veces_usada"]
 
 
 class PrendaIn(BaseModel):
@@ -162,3 +164,181 @@ def baja_prenda(prenda_id: int):
         if cur.rowcount == 0:
             raise HTTPException(404, "Prenda no encontrada")
     return {"ok": True}
+
+
+def _prendas(where: str = "", args: tuple | list = ()) -> list[dict]:
+    with conexion() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(f"SELECT {', '.join(COLUMNAS)} FROM {S}.v_prendas_uso {where}", args)
+        return cur.fetchall()
+
+
+def _prenda_o_404(prenda_id: int) -> dict:
+    filas = _prendas("WHERE id = %s", (prenda_id,))
+    if not filas:
+        raise HTTPException(404, "Prenda no encontrada")
+    return filas[0]
+
+
+# ---------- Cuidado (etiqueta de lavado) ----------
+
+class FibraIn(BaseModel):
+    fibra: str
+    porcentaje: int | None = Field(default=None, ge=0, le=100)
+
+
+class CuidadoIn(BaseModel):
+    foto_etiqueta: str | None = None
+    simbolos: list[str] = []
+    composicion: list[FibraIn] = []
+    lavado: str | None = None
+    temperatura_max: int | None = Field(default=None, ge=0, le=95)
+    blanqueador: str | None = None
+    secadora: str | None = None
+    secado: str | None = None
+    planchado: str | None = None
+    tintoreria: str | None = None
+    notas: str = ""
+
+
+@app.post("/prendas/{prenda_id}/etiqueta/analizar")
+async def analizar_etiqueta(prenda_id: int, foto: UploadFile = File(...)):
+    """Guarda la foto de la etiqueta y propone composicion + cuidado. No guarda en la prenda:
+    la app muestra la propuesta y luego llama a PUT /prendas/{id}/cuidado."""
+    _prenda_o_404(prenda_id)
+    try:
+        img = fotos.normalizar(await foto.read())
+    except Exception:
+        raise HTTPException(400, "No pude leer la imagen")
+    ruta = fotos.guardar_original(img, carpeta="etiquetas")
+    try:
+        cuidado = await run_in_threadpool(get_provider().leer_etiqueta_cuidado, fotos.a_jpeg_bytes(img), "image/jpeg")
+        cuidado = asdict(cuidado)
+    except Exception as e:
+        print(f"leer_etiqueta_cuidado fallo: {e}")
+        cuidado = None
+    return {"foto_etiqueta": ruta, "cuidado": cuidado}
+
+
+@app.put("/prendas/{prenda_id}/cuidado")
+def guardar_cuidado(prenda_id: int, c: CuidadoIn):
+    _validar_ruta(c.foto_etiqueta)
+    datos = c.model_dump(exclude={"foto_etiqueta", "composicion"})
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""UPDATE {S}.prendas SET composicion = %s, cuidado = %s,
+                    foto_etiqueta = COALESCE(%s, foto_etiqueta)
+                WHERE id = %s AND activa""",
+            (Json([f.model_dump() for f in c.composicion]), Json(datos), c.foto_etiqueta, prenda_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Prenda no encontrada")
+    return {"ok": True}
+
+
+# ---------- Usos ("me lo puse hoy") ----------
+
+class UsoIn(BaseModel):
+    prendas: list[int] = Field(min_length=1)
+    fecha: date | None = None
+    outfit_id: int | None = None
+
+
+@app.post("/usos")
+def registrar_uso(u: UsoIn):
+    fecha = u.fecha or date.today()
+    with conexion() as conn, conn.cursor() as cur:
+        for pid in u.prendas:
+            cur.execute(
+                f"""INSERT INTO {S}.usos (prenda_id, outfit_id, fecha) VALUES (%s, %s, %s)
+                    ON CONFLICT (prenda_id, fecha) DO NOTHING""",
+                (pid, u.outfit_id, fecha),
+            )
+    return {"ok": True, "fecha": fecha}
+
+
+@app.delete("/usos")
+def deshacer_uso(prendas: list[int] = Query(...), fecha: date | None = None):
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute(f"DELETE FROM {S}.usos WHERE prenda_id = ANY(%s) AND fecha = %s",
+                    (prendas, fecha or date.today()))
+    return {"ok": True}
+
+
+# ---------- Outfits ----------
+
+class OutfitIn(BaseModel):
+    prendas: list[int] = Field(min_length=2)
+    nombre: str | None = None
+    ocasion: str | None = None
+    fuente: str = "manual"
+    aceptado: bool | None = True
+    explicacion: str | None = None
+
+
+@app.post("/outfits")
+def guardar_outfit(o: OutfitIn):
+    if o.fuente not in ("ia", "manual"):
+        raise HTTPException(400, "fuente debe ser ia o manual")
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""INSERT INTO {S}.outfits (nombre, ocasion, prendas, fuente, aceptado, explicacion)
+                VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (o.nombre, o.ocasion, o.prendas, o.fuente, o.aceptado, o.explicacion),
+        )
+        return {"id": cur.fetchone()[0]}
+
+
+@app.get("/outfits")
+def listar_outfits(limite: int = 30):
+    with conexion() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""SELECT id, nombre, ocasion, prendas, fuente, aceptado, explicacion, imagen_tryon, created_at
+                FROM {S}.outfits WHERE aceptado IS NOT FALSE ORDER BY created_at DESC LIMIT %s""",
+            (limite,),
+        )
+        outfits = cur.fetchall()
+    ids = {i for o in outfits for i in o["prendas"]}
+    por_id = {p["id"]: p for p in _prendas("WHERE id = ANY(%s)", (list(ids),))} if ids else {}
+    for o in outfits:
+        o["prendas"] = [por_id[i] for i in o["prendas"] if i in por_id]
+    return outfits
+
+
+@app.get("/outfit/armar")
+def armar_outfit(base: int, fijas: list[int] = Query(default=[])):
+    """Prenda base + prendas fijadas -> opciones ordenadas para cada slot faltante."""
+    closet = _prendas()
+    por_id = {p["id"]: p for p in closet}
+    if base not in por_id:
+        raise HTTPException(404, "Prenda base no encontrada")
+    fijadas = [por_id[i] for i in fijas if i in por_id and i != base]
+    return combinador.armar(por_id[base], fijadas, closet)
+
+
+# ---------- Olvidadas ----------
+
+@app.get("/prendas/olvidadas")
+def olvidadas(dias: int = params.DIAS_OLVIDADA):
+    """Dos listas: prendas usadas alguna vez pero no en `dias` dias, y prendas nunca usadas
+    (las agregadas hace mas de 7 dias, para no marcar lo que acabas de cargar)."""
+    sin_usar = _prendas("WHERE ultimo_uso < CURRENT_DATE - %s ORDER BY ultimo_uso", (dias,))
+    nunca = _prendas("WHERE ultimo_uso IS NULL AND created_at < now() - interval '7 days' ORDER BY created_at")
+    return {"dias": dias, "sin_usar": sin_usar, "nunca_usadas": nunca}
+
+
+# ---------- Lavanderia ----------
+
+class LavanderiaIn(BaseModel):
+    prendas: list[int] = Field(min_length=1)
+
+
+@app.post("/lavanderia")
+def armar_cargas(l: LavanderiaIn):
+    prendas = _prendas("WHERE id = ANY(%s)", (l.prendas,))
+    return {"cargas": lavanderia.agrupar(prendas)}
+
+
+@app.get("/cuidado/simbolos")
+def diccionario_simbolos():
+    """Diccionario oficial de simbolos (ISO 3758) para mostrarlos en la app."""
+    return simbolos_cuidado.describir(simbolos_cuidado.CODIGOS)
