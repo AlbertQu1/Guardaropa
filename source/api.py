@@ -223,6 +223,12 @@ async def analizar_etiqueta(prenda_id: int, foto: UploadFile = File(...)):
 def guardar_cuidado(prenda_id: int, c: CuidadoIn):
     _validar_ruta(c.foto_etiqueta)
     datos = c.model_dump(exclude={"foto_etiqueta", "composicion"})
+    if c.simbolos:
+        # Los simbolos mandan: las instrucciones se recalculan desde el diccionario
+        t = simbolos_cuidado.traducir(c.simbolos)
+        for campo in ("lavado", "temperatura_max", "blanqueador", "secadora", "secado", "planchado", "tintoreria"):
+            datos[campo] = t.get(campo)
+        datos["simbolos"] = t["simbolos"]
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             f"""UPDATE {S}.prendas SET composicion = %s, cuidado = %s,
