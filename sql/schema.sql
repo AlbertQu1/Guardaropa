@@ -60,6 +60,11 @@ ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS composicion JSONB;
 --  "tintoreria": "no|si|solo", "notas": "..."}
 ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS cuidado JSONB;
 
+-- Salida del closet: por que y cuando (regalada, donada, vendida, rota...)
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS baja_motivo TEXT;
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS baja_nota TEXT;
+ALTER TABLE guardarropa.prendas ADD COLUMN IF NOT EXISTS baja_fecha DATE;
+
 -- Ultimo uso por prenda: base de la rotacion y de "Olvidadas".
 -- Se recrea siempre porque p.* se congela al crear la vista.
 DROP VIEW IF EXISTS guardarropa.v_prendas_uso;

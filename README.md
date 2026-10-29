@@ -33,6 +33,10 @@ qué se procesa local y qué se manda a la nube.
   máximo un color fuerte), ocasión común, clima, estampados y rotación (lo que no usas sube, pero
   solo como desempate). Fijar una prenda recalcula el resto. "Me lo puse hoy" registra el uso.
 - ✅ **Olvidadas**: prendas sin usar en 60+ días y prendas que aún no estrenas.
+- ✅ **Bolsas y mochilas**: categoría propia que el combinador no sugiere sola; solo aparece si la
+  pides (`extras=bolsa`) o si fijas una.
+- ✅ **Salidas**: sacar una prenda del clóset con motivo (regalada, donada, vendida, rota, ya no
+  queda…), nota y fecha. Se conserva su historial de uso y se puede regresar al clóset.
 - ⏳ **Fase 2b**: "pídeme un outfit" en lenguaje natural ("algo para la oficina, hace frío") y
   modo tienda.
 - ⏳ **Fase 3 — try-on y grafo**: ver el outfit puesto en una foto tuya (generación de imagen)
@@ -96,7 +100,7 @@ media/                  fotos (no versionado)
 
 | Tabla | Para qué |
 |---|---|
-| `prendas` | cada prenda: fotos, categoría, colores, formalidad (1-5), clima, ocasiones, descripción, embedding (HNSW coseno), foto de la etiqueta, composición y cuidado (JSONB) |
+| `prendas` | cada prenda: fotos, categoría, colores, formalidad (1-5), clima, ocasiones, descripción, embedding (HNSW coseno), foto de la etiqueta, composición y cuidado (JSONB), y motivo/nota/fecha de salida del clóset |
 | `outfits` | outfits guardados o propuestos, si se aceptaron y su imagen de try-on |
 | `usos` | "me lo puse hoy", base de la rotación |
 | `fotos_usuario` | fotos de cuerpo completo para el try-on |
@@ -111,13 +115,16 @@ media/                  fotos (no versionado)
 | POST | `/prendas` | guarda una prenda confirmada |
 | GET | `/prendas?categoria=` | lista el clóset con datos de uso |
 | PUT | `/prendas/{id}` | edita etiquetas (recalcula el embedding) |
-| DELETE | `/prendas/{id}` | baja lógica (conserva el historial de uso) |
+| DELETE | `/prendas/{id}` | baja lógica sin motivo (conserva el historial de uso) |
+| POST | `/prendas/{id}/baja` | sacar del clóset con motivo y nota |
+| GET | `/bajas` | lo que salió del clóset: motivo, fecha, veces usada, resumen por motivo |
+| POST | `/prendas/{id}/restaurar` | regresar una prenda al clóset |
 | POST | `/prendas/{id}/etiqueta/analizar` | foto de la etiqueta → composición + símbolos propuestos (no guarda) |
 | PUT | `/prendas/{id}/cuidado` | guarda composición y símbolos (las instrucciones se derivan de los símbolos) |
 | GET | `/cuidado/simbolos` | diccionario de símbolos ISO 3758 |
 | GET | `/cuidado/guia` | cómo leer los símbolos, cuidado por tela y por artículo de la casa |
 | POST | `/cuidado/estimar` | símbolos sugeridos para una prenda sin etiqueta, según sus fibras |
-| GET | `/outfit/armar?base=&fijas=` | opciones ordenadas por espacio para completar el outfit |
+| GET | `/outfit/armar?base=&fijas=&extras=` | opciones ordenadas por espacio para completar el outfit (`extras=bolsa` para pedir bolsa o mochila) |
 | POST | `/usos` · DELETE `/usos` | "me lo puse hoy" (idempotente por día) y deshacer |
 | POST · GET | `/outfits` | guardar y listar outfits |
 | GET | `/prendas/olvidadas` | sin usar en N días + nunca usadas |

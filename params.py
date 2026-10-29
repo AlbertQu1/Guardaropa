@@ -12,7 +12,12 @@ MAX_LADO_FOTO = 1600  # px, se redimensiona al subir
 
 GEMINI_MODELO_TEXTO = "gemini-flash-latest"
 
-CATEGORIAS = ["top", "bottom", "calzado", "chamarra", "accesorio", "vestido_completo"]
+CATEGORIAS = ["top", "bottom", "calzado", "chamarra", "accesorio", "bolsa", "vestido_completo"]
+# Motivos para sacar una prenda del closet (baja logica, se conserva el historial)
+MOTIVOS_BAJA = {
+    "regalada": "Regalada", "donada": "Donada", "vendida": "Vendida", "rota": "Rota o desgastada",
+    "no_queda": "Ya no me queda", "no_gusta": "Ya no me gusta", "perdida": "Se perdió", "otro": "Otro",
+}
 DIAS_OLVIDADA = 60  # prenda sin usar en estos dias aparece en "Olvidadas"
 
 # Combinador "Arma tu outfit"

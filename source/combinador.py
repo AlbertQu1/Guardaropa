@@ -6,7 +6,9 @@ from datetime import date
 import params
 
 SLOTS = ["top", "bottom", "calzado", "chamarra", "accesorio"]
-SLOTS_OPCIONALES = {"chamarra", "accesorio"}
+SLOTS_OPCIONALES = {"chamarra", "accesorio", "bolsa"}
+# Solo aparecen si se piden o si ya hay una fijada (ej. mochila): no se sugieren solas
+SLOTS_A_PEDIDO = ["bolsa"]
 # La rotacion es desempate: nunca debe ganarle a la coherencia del outfit
 PESOS = {"formalidad": 0.32, "color": 0.24, "ocasion": 0.18, "clima": 0.08, "estampado": 0.08, "rotacion": 0.10}
 DIAS_ROTACION_MAX = 60  # a partir de aqui la prenda ya cuenta como "olvidada"
@@ -90,16 +92,21 @@ def puntuar(cand: dict, elegidas: list[dict], hoy: date) -> tuple[float, list[st
 
 
 def armar(base: dict, fijas: list[dict], prendas: list[dict], hoy: date | None = None,
-          n: int = params.OPCIONES_POR_SLOT) -> dict:
-    """prendas: todo el closet activo (dicts de v_prendas_uso). Devuelve opciones por slot."""
+          n: int = params.OPCIONES_POR_SLOT, extras: list[str] | None = None) -> dict:
+    """prendas: todo el closet activo (dicts de v_prendas_uso). Devuelve opciones por slot.
+    extras: slots a pedido que el usuario quiere ver (ej. ["bolsa"])."""
     hoy = hoy or date.today()
     elegidas = [base] + fijas
     usados = {p["id"] for p in elegidas}
     fijas_por_slot = {p["categoria"]: p for p in fijas}
+    slots = slots_para(base["categoria"])
+    slots += [s for s in SLOTS_A_PEDIDO
+              if s != base["categoria"] and (s in (extras or []) or s in fijas_por_slot)]
     resultado = []
-    for slot in slots_para(base["categoria"]):
+    for slot in slots:
+        a_pedido = slot in SLOTS_A_PEDIDO
         if slot in fijas_por_slot:
-            resultado.append({"slot": slot, "opcional": slot in SLOTS_OPCIONALES,
+            resultado.append({"slot": slot, "opcional": slot in SLOTS_OPCIONALES, "a_pedido": a_pedido,
                               "fija": fijas_por_slot[slot]["id"], "opciones": []})
             continue
         candidatos = [p for p in prendas if p["categoria"] == slot and p["id"] not in usados]
@@ -108,6 +115,6 @@ def armar(base: dict, fijas: list[dict], prendas: list[dict], hoy: date | None =
             score, razones = puntuar(c, elegidas, hoy)
             puntuados.append({"prenda": c, "score": score, "razones": razones})
         puntuados.sort(key=lambda x: x["score"], reverse=True)
-        resultado.append({"slot": slot, "opcional": slot in SLOTS_OPCIONALES, "fija": None,
+        resultado.append({"slot": slot, "opcional": slot in SLOTS_OPCIONALES, "a_pedido": a_pedido, "fija": None,
                           "opciones": puntuados[:n]})
     return {"base": base, "slots": resultado}

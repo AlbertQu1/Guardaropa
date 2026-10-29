@@ -10,7 +10,8 @@ from source.ia.base import CuidadoPrenda, EtiquetasPrenda, Fibra, IAProvider, Pr
 
 PROMPT_ETIQUETAR = f"""Eres un estilista. Analiza la prenda principal de la foto y responde en español.
 - categoria: una de {params.CATEGORIAS} (top = camisa, playera, sudadera, suéter; bottom = pantalón, short, falda;
-  chamarra = chamarra, saco, abrigo, chaleco; accesorio = cinturón, reloj, gorra, lentes, bolsa, corbata, bufanda).
+  chamarra = chamarra, saco, abrigo, chaleco; accesorio = cinturón, reloj, gorra, lentes, corbata, bufanda;
+  bolsa = mochila, bolsa, maletín, cangurera, tote).
 - subcategoria: tipo concreto (ej. "camisa oxford", "jeans slim", "tenis blancos").
 - colores: colores dominantes, el principal primero, nombres simples en español.
 - estampado: liso, rayas, cuadros, estampado, etc.

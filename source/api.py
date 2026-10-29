@@ -157,11 +157,65 @@ def editar_prenda(prenda_id: int, p: PrendaIn):
     return {"ok": True}
 
 
+class BajaIn(BaseModel):
+    motivo: str | None = None
+    nota: str = ""
+
+
+def _dar_de_baja(prenda_id: int, motivo: str | None, nota: str):
+    if motivo is not None and motivo not in params.MOTIVOS_BAJA:
+        raise HTTPException(400, f"Motivo invalido: {motivo}")
+    with conexion() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""UPDATE {S}.prendas SET activa = FALSE, baja_motivo = %s, baja_nota = %s, baja_fecha = CURRENT_DATE
+                WHERE id = %s AND activa""",
+            (motivo, nota.strip() or None, prenda_id),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, "Prenda no encontrada")
+    return {"ok": True}
+
+
 @app.delete("/prendas/{prenda_id}")
 def baja_prenda(prenda_id: int):
-    """Baja logica: la prenda deja de aparecer pero se conserva su historial de usos."""
+    """Baja logica sin motivo: la prenda deja de aparecer pero se conserva su historial de usos."""
+    return _dar_de_baja(prenda_id, None, "")
+
+
+@app.post("/prendas/{prenda_id}/baja")
+def baja_con_motivo(prenda_id: int, b: BajaIn):
+    """Sacar la prenda del closet diciendo por que (regalada, donada, rota...)."""
+    return _dar_de_baja(prenda_id, b.motivo, b.nota)
+
+
+@app.get("/bajas")
+def listar_bajas():
+    """Lo que ya salio del closet: motivo, fecha y cuanto se uso mientras estuvo."""
+    with conexion() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""SELECT p.id, p.foto_original, p.foto_recortada, p.categoria, p.subcategoria, p.colores,
+                       p.baja_motivo, p.baja_nota, p.baja_fecha, p.created_at,
+                       count(u.id) AS veces_usada, max(u.fecha) AS ultimo_uso
+                FROM {S}.prendas p LEFT JOIN {S}.usos u ON u.prenda_id = p.id
+                WHERE NOT p.activa
+                GROUP BY p.id ORDER BY p.baja_fecha DESC NULLS LAST, p.id DESC"""
+        )
+        bajas = cur.fetchall()
+    resumen: dict[str, int] = {}
+    for b in bajas:
+        resumen[b["baja_motivo"] or "sin_motivo"] = resumen.get(b["baja_motivo"] or "sin_motivo", 0) + 1
+    return {"motivos": params.MOTIVOS_BAJA, "resumen": resumen, "bajas": bajas}
+
+
+@app.post("/prendas/{prenda_id}/restaurar")
+def restaurar_prenda(prenda_id: int):
+    """Regresar una prenda al closet (por si fue un error)."""
     with conexion() as conn, conn.cursor() as cur:
-        cur.execute(f"UPDATE {S}.prendas SET activa = FALSE WHERE id = %s", (prenda_id,))
+        cur.execute(
+            f"""UPDATE {S}.prendas SET activa = TRUE, baja_motivo = NULL, baja_nota = NULL, baja_fecha = NULL
+                WHERE id = %s AND NOT activa""",
+            (prenda_id,),
+        )
         if cur.rowcount == 0:
             raise HTTPException(404, "Prenda no encontrada")
     return {"ok": True}
@@ -313,14 +367,15 @@ def listar_outfits(limite: int = 30):
 
 
 @app.get("/outfit/armar")
-def armar_outfit(base: int, fijas: list[int] = Query(default=[])):
-    """Prenda base + prendas fijadas -> opciones ordenadas para cada slot faltante."""
+def armar_outfit(base: int, fijas: list[int] = Query(default=[]), extras: list[str] = Query(default=[])):
+    """Prenda base + prendas fijadas -> opciones ordenadas para cada slot faltante.
+    extras: slots que solo salen si se piden (bolsa/mochila)."""
     closet = _prendas()
     por_id = {p["id"]: p for p in closet}
     if base not in por_id:
         raise HTTPException(404, "Prenda base no encontrada")
     fijadas = [por_id[i] for i in fijas if i in por_id and i != base]
-    return combinador.armar(por_id[base], fijadas, closet)
+    return combinador.armar(por_id[base], fijadas, closet, extras=extras)
 
 
 # ---------- Olvidadas ----------
