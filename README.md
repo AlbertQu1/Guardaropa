@@ -58,6 +58,13 @@ foto (cel) ──► normaliza (orientación EXIF, máx 1600 px, HEIC → JPEG)
 El recorte y el etiquetado corren **en paralelo** (~8 s por foto en vez de ~16 s). Nada se
 guarda sin que el usuario confirme las etiquetas: la IA propone, tú decides.
 
+### Fotos sin confirmar
+Lo que se analiza (prenda nueva, etiqueta de cuidado, y después el modo tienda) se guarda en
+`media/temporal/`. Al confirmar se mueve a su carpeta final (`originales/`, `recortes/`,
+`etiquetas/`). Si el usuario descarta, la app pide borrarlo en ese momento; si cierra la app sin
+confirmar, la API borra cada 6 horas lo temporal con más de 24 horas, y también las fotos que ya no
+usa ninguna prenda (las de prendas que salieron del clóset se conservan).
+
 ### Por qué vectores *y* grafo
 - **pgvector** responde "¿ya tengo algo parecido?": en el modo tienda, una prenda nueva se
   compara contra todo el clóset por similitud de su descripción.
@@ -112,7 +119,8 @@ media/                  fotos (no versionado)
 |---|---|---|
 | GET | `/health` | estado y conteo de prendas |
 | POST | `/prendas/analizar` | sube una foto, devuelve recorte + etiquetas propuestas (no guarda) |
-| POST | `/prendas` | guarda una prenda confirmada |
+| POST | `/prendas` | guarda una prenda confirmada (mueve sus fotos fuera de `temporal/`) |
+| POST | `/temporal/descartar` | borra fotos temporales que el usuario descartó |
 | GET | `/prendas?categoria=` | lista el clóset con datos de uso |
 | PUT | `/prendas/{id}` | edita etiquetas (recalcula el embedding) |
 | DELETE | `/prendas/{id}` | baja lógica sin motivo (conserva el historial de uso) |

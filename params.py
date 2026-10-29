@@ -9,6 +9,8 @@ EMBEDDING_DIM = 384
 MEDIA_DIR = "media"
 REMBG_MODEL = "u2netp"  # modelo ligero, CPU
 MAX_LADO_FOTO = 1600  # px, se redimensiona al subir
+HORAS_FOTO_TEMPORAL = 24  # foto analizada sin confirmar: se borra despues de esto
+HORAS_ENTRE_LIMPIEZAS = 6
 
 GEMINI_MODELO_TEXTO = "gemini-flash-latest"
 

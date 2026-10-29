@@ -8,6 +8,7 @@ Uso:
 import asyncio
 import os
 import threading
+import time
 from typing import Literal
 
 import numpy as np
@@ -34,7 +35,7 @@ S = params.DB_SCHEMA
 app = FastAPI(title="Guardarropa API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-for sub in ("originales", "recortes", "etiquetas", "usuario", "tryon"):
+for sub in ("originales", "recortes", "etiquetas", "usuario", "tryon", fotos.TEMPORAL):
     os.makedirs(os.path.join(params.MEDIA_DIR, sub), exist_ok=True)
 app.mount("/media", StaticFiles(directory=params.MEDIA_DIR), name="media")
 
@@ -43,6 +44,44 @@ app.mount("/media", StaticFiles(directory=params.MEDIA_DIR), name="media")
 def precargar_rembg():
     # Cargar el modelo tarda ~50s en este CPU: se hace en segundo plano al arrancar.
     threading.Thread(target=fotos._rembg, daemon=True).start()
+
+
+def limpiar_fotos() -> dict:
+    """Borra fotos analizadas que nunca se confirmaron y fotos que ya no usa ninguna prenda."""
+    rutas_en_uso = None
+    # Solo con el schema real: con un schema de pruebas, las fotos reales parecerian huerfanas
+    if S == "guardarropa":
+        with conexion() as conn, conn.cursor() as cur:
+            cur.execute(f"""SELECT unnest(ARRAY[foto_original, foto_recortada, foto_etiqueta])
+                            FROM {S}.prendas""")  # incluye las que salieron del closet (Salidas muestra su foto)
+            rutas_en_uso = {r[0] for r in cur.fetchall() if r[0]}
+    return fotos.limpiar(rutas_en_uso, params.HORAS_FOTO_TEMPORAL)
+
+
+def _ciclo_limpieza():
+    while True:
+        try:
+            r = limpiar_fotos()
+            if r["temporales"] or r["huerfanas"]:
+                print(f"limpieza de fotos: {r}")
+        except Exception as e:  # nunca tumbar la API por la limpieza
+            print(f"limpieza de fotos fallo: {e}")
+        time.sleep(params.HORAS_ENTRE_LIMPIEZAS * 3600)
+
+
+@app.on_event("startup")
+def iniciar_limpieza():
+    threading.Thread(target=_ciclo_limpieza, daemon=True).start()
+
+
+class DescartarIn(BaseModel):
+    rutas: list[str]
+
+
+@app.post("/temporal/descartar")
+def descartar_temporal(d: DescartarIn):
+    """La app avisa que el usuario cancelo: se borran sus fotos temporales en ese momento."""
+    return {"borradas": fotos.descartar(d.rutas)}
 
 COLUMNAS = ["id", "foto_original", "foto_recortada", "categoria", "subcategoria", "colores", "estampado",
             "material", "formalidad", "temporada", "ocasiones", "descripcion", "foto_etiqueta", "composicion",
@@ -90,10 +129,11 @@ async def analizar(foto: UploadFile = File(...)):
         img = fotos.normalizar(datos)
     except Exception:
         raise HTTPException(400, "No pude leer la imagen")
-    original = fotos.guardar_original(img)
+    # Todo queda en temporal/ hasta que el usuario confirme (POST /prendas)
+    original = fotos.guardar_original(img, carpeta=fotos.TEMPORAL)
     # Recorte (CPU local) y etiquetado (Gemini) en paralelo.
     recorte, etiquetas = await asyncio.gather(
-        run_in_threadpool(fotos.recortar_fondo, img),
+        run_in_threadpool(fotos.recortar_fondo, img, fotos.TEMPORAL),
         run_in_threadpool(get_provider().etiquetar_prenda, fotos.a_jpeg_bytes(img), "image/jpeg"),
         return_exceptions=True,
     )
@@ -115,6 +155,9 @@ def crear_prenda(p: PrendaIn):
     _validar_ruta(p.foto_original)
     _validar_ruta(p.foto_recortada)
     vector = np.array(embed([_texto_embedding(p)])[0])
+    # Confirmada: sus fotos salen de temporal/
+    p.foto_original = fotos.confirmar(p.foto_original, "originales")
+    p.foto_recortada = fotos.confirmar(p.foto_recortada, "recortes")
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             f"""INSERT INTO {S}.prendas (foto_original, foto_recortada, categoria, subcategoria, colores, estampado,
@@ -265,7 +308,7 @@ async def analizar_etiqueta(prenda_id: int, foto: UploadFile = File(...)):
         img = fotos.normalizar(await foto.read())
     except Exception:
         raise HTTPException(400, "No pude leer la imagen")
-    ruta = fotos.guardar_original(img, carpeta="etiquetas")
+    ruta = fotos.guardar_original(img, carpeta=fotos.TEMPORAL)  # se confirma en PUT /prendas/{id}/cuidado
     try:
         cuidado = await run_in_threadpool(get_provider().leer_etiqueta_cuidado, fotos.a_jpeg_bytes(img), "image/jpeg")
         cuidado = asdict(cuidado)
@@ -278,6 +321,8 @@ async def analizar_etiqueta(prenda_id: int, foto: UploadFile = File(...)):
 @app.put("/prendas/{prenda_id}/cuidado")
 def guardar_cuidado(prenda_id: int, c: CuidadoIn):
     _validar_ruta(c.foto_etiqueta)
+    _prenda_o_404(prenda_id)
+    c.foto_etiqueta = fotos.confirmar(c.foto_etiqueta, "etiquetas")
     datos = c.model_dump(exclude={"foto_etiqueta", "composicion"})
     if c.simbolos:
         # Los simbolos mandan: las instrucciones se recalculan desde el diccionario
